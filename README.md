@@ -1,45 +1,64 @@
 This is a small project aimed at building a 6 DOF robot arm using inexpensive components, and control it through a Raspberry Pi.
 
+# This is a fork
+Originally a fork from [Stawo's Robot Arm](https://github.com/stawo/robot-arm), I decided to use an Arduino Nano as an I2C  ADC as I already had some available. This project  used the AD1015 ADC, and I thought of using an MCP3008 instead, but at the time of writing, an Arduino is just as cheap and slightly more convenient as it's sold on a board with easy to connect headers.
+
 ![robot arm kit](images/robot_arm_kit.jpg "Robot Arm Kit")
 
 # Table of Contents
+- [This is a fork](#this-is-a-fork)
 - [Table of Contents](#table-of-contents)
 - [BOM](#bom)
+- [Power Supply considerations](#power-supply-considerations)
 - [Some Theory](#some-theory)
   - [Controlling Servo Motors](#controlling-servo-motors)
   - [Servo motor feedback](#servo-motor-feedback)
 - [Raspberry Pi configuration](#raspberry-pi-configuration)
   - [Raspberry Pi set up](#raspberry-pi-set-up)
   - [Controlling servo motors with Raspberry Pi and the PWM Driver PCA9685](#controlling-servo-motors-with-raspberry-pi-and-the-pwm-driver-pca9685)
+  - [Simple GUI](#simple-gui)
   - [Reading the feedback from servo motors with Raspberry Pi](#reading-the-feedback-from-servo-motors-with-raspberry-pi)
+  - [Arduino Code](#arduino-code)
+  - [Inverse Kinematics](#inverse-kinematics)
 
 # BOM
 List of components used:
-* Raspberry Pi 2 Model B
-* 32GB Micro SD card
-* Robot Arm mechanical kit (Diymore ROT3U 6DOF Aluminium Robot Arm Mechanical Clamp Claw Kit, https://www.amazon.de/gp/product/B01LY4RHX2/)
-* 6x Servo Motors (Lewan Soul LD-27MG, http://www.lewansoul.com/product/detail-19.html)
-* 12V 30A Switching Power Supply (Xktts Ueercrr 12V 30A 360W, https://www.amazon.de/gp/product/B00P2CTT26)
-* DC/DC 4.5-30V to 1-30V 12A Buck Converter (https://www.amazon.de/gp/product/B00HV4EPG8)
-* Dual USB DC/DC Step Down Converter (https://www.amazon.de/gp/product/B0768D2NYH)
-* Sunfounder PCA9685 16 Channel 12 Bit PMW Servo Driver (http://wiki.sunfounder.cc/index.php?title=PCA9685_16_Channel_12_Bit_PWM_Servo_Driver)
-* 4x 45 cm Servo Extension Cable (https://www.amazon.de/gp/product/B01M7N77XC)
-* 4x 20cm female-female Dupont jumper wire cable (https://www.amazon.de/gp/product/B00OL6JZ3C)
-* 3-cores electric wire with plug
-* 2-cores wire
-* screws/nails
-* USB-Micro USB cable
+* Raspberry Pi 3 Model B+
+* 16GB Micro SD card
+* Robot Arm mechanical kit (AliExpress, see the picture for reference as there are many sellers)
+* 6x Servo Motors (4x MG996R + 2x Carson CS-3. Ideally they should all be the same model but I had the Carson available)
+* 12V Switching Power Supply: Any 12V power supply will do as long as it can deliver at least 2A (24W)
+* 2x LM2596 based converter (1x USB output, 1x Wire terminal output)
+* PCA9685 16 Channel 12 Bit PMW Servo Driver [Wiki](http://wiki.sunfounder.cc/index.php?title=PCA9685_16_Channel_12_Bit_PWM_Servo_Driver). There are many clones available.
+* Servo Extension Cables
+* female-female Dupont jumper wire cable
+* Other wiring as needed
+* (TODO) Enclosure for all boards and connectors
+* Logic level shifter board
 
 Tools:
 * Multimeter
 * Electric screwdriver
 * Monitor/Keyboard/Mouse/Wi-Fi adapter/SD Adapter for Micro SD for the Raspberry Pi
 
-Just to give a reference, I personally ordered almost everything on Amazon for the sake of simplicity (or laziness), and spent around 200€.
+#  Power Supply considerations
+This circuit needs 3 sources of power for each of the 3 main components:
+* The Raspberry Pi
+* The 6 Servo Motors
+* The Arduino/ADC
+
+You might be able to power everything straight from the 5V pin on the Raspberry, but that's a bit risky. The main reason to have different power supplies is that the servos can draw a significant amount of current (especially under load), which might either exceed the RPi 5V pin output or cause significant other issues (brownouts and voltage drops leading to servos misbehaving). From quick tests, I found that the servos can draw around 300mA for a standard movement, and almost twice that if they get stalled or are under significant load. Since we have 6 servos we can easily reach over 2A during some movements, hence the need to separate the power supplies (the RPi will draw about 500mA, possibly more if we add lots of processing in the background)
+
+. I want to build this with all the electronics in a single panel attached to the robot base, with a single DC Barrel 12V input. Therefore, the  power supply consists of:
+
+- One 12V DC power supply. Since the LM2596 converter has a variable input of 6-40V, you might even get away with an 18V laptop power supply
+- An LM2596 board with a USB connector that will power the raspberry pi
+- Another LM2596 board with a standard screw terminal that will power the servos.
+- The arduino will be powered by the Raspberry Pi 5V pin.
 
 |**NOTE**|
 |--------|
-|The servo motors have to be physically modified in order to read the internal potentiometer.|
+|The servo motors have to be physically modified in order to read the internal potentiometer. If you use the MG996r, it's the middle pad out of the 3 in a row you can see closest to the wall. [This video](https://www.youtube.com/watch?v=w7qRs6tvxlM) is for a different model of servo but it shows the process 
 
 # Some Theory
 Before moving on, it is necessary to understand how the various elements work, especially parts like servo motors, in order to avoid problems (i.e., avoid burning stuff like me due to too much excitement and not knowing how things work!).
@@ -91,19 +110,24 @@ Especially in my setup, once the PCA9685 control board sends the PWM signal to t
 To understand if a servo motor is in stall (or, alternatively, is operating correctly), we need a feedback from it.
 We can achieve this by tapping the potentiometer inside the servo motor, and read the measured voltage.
 
-**[TO DO: How to modify the servo motors]**
+After modifying the servo motors, we have an extra pin that will output a voltage directly related to the position. This voltage varies for each servo model:
+- MG996r seems to go between 0.7V and 2.9V approximately
+- CS-3 goes lower, between 0.6V and about 1.8V
+
+This
+
+**Modifying Servos**
 
 Links:
 * https://www.youtube.com/watch?v=w7qRs6tvxlM
 * https://learn.adafruit.com/analog-feedback-servos/using-feedback
 * https://electronics.stackexchange.com/questions/214761/how-to-measure-servo-potentiometer
 
+
+
 # Raspberry Pi configuration
 
-I'm running the Raspberry Pi using Raspbian Stretch with desktop (https://www.raspberrypi.org/downloads/raspbian/).
-
-Here is the Raspberry Pi GPIO layout (http://pi4j.com/pins/model-2b-rev1.html) for reference:
-![raspberry pi gpio](images/raspberry_pi_2_gpio.png "Raspberry Pi 2 GPIO")
+I'm running the Raspberry Pi using Raspbian. For the pinout, there's this excellent website: [RPI pinout](https://pinout.xyz/)
 
 ## Raspberry Pi set up
 To be able to control servo motor through the PCA9685 controller, we need to perform the following steps:
@@ -130,9 +154,19 @@ To be able to control servo motor through the PCA9685 controller, we need to per
 
 Links:
 * https://learn.adafruit.com/adafruit-16-channel-servo-driver-with-raspberry-pi/configuring-your-pi-for-i2c
+* https://learn.adafruit.com/adafruit-16-channel-servo-driver-with-raspberry-pi/using-the-adafruit-library
 
 ## Controlling servo motors with Raspberry Pi and the PWM Driver PCA9685
 **[TO DO]**
 
+## Simple GUI
+**[TO DO]**
+
 ## Reading the feedback from servo motors with Raspberry Pi
+**[TO DO]**
+
+## Arduino Code
+**[TO DO]**
+
+## Inverse Kinematics
 **[TO DO]**

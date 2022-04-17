@@ -87,6 +87,7 @@ celerybeat-schedule
 # Environments
 .env
 .venv
+.rpipython
 env/
 venv/
 ENV/

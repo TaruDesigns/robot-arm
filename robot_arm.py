@@ -4,7 +4,7 @@
 # External libraries
 import time
 # Import the PCA9685 module.
-import Adafruit_PCA9685
+from adafruit_pca9685 import PCA9685 as Adafruit_PCA9685
 import board
 import busio
 import adafruit_ads1x15.ads1115 as ADS
