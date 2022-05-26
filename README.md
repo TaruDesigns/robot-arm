@@ -18,6 +18,7 @@ Originally a fork from [Stawo's Robot Arm](https://github.com/stawo/robot-arm), 
   - [Controlling servo motors with Raspberry Pi and the PWM Driver PCA9685](#controlling-servo-motors-with-raspberry-pi-and-the-pwm-driver-pca9685)
   - [Simple GUI](#simple-gui)
   - [Reading the feedback from servo motors with Raspberry Pi](#reading-the-feedback-from-servo-motors-with-raspberry-pi)
+  - [Using output enable to manually bring robots to position and learn those positions.](#using-output-enable-to-manually-bring-robots-to-position-and-learn-those-positions)
   - [Arduino Code](#arduino-code)
   - [Inverse Kinematics](#inverse-kinematics)
 
@@ -27,14 +28,13 @@ List of components used:
 * 16GB Micro SD card
 * Robot Arm mechanical kit (AliExpress, see the picture for reference as there are many sellers)
 * 6x Servo Motors (4x MG996R + 2x Carson CS-3. Ideally they should all be the same model but I had the Carson available)
-* 12V Switching Power Supply: Any 12V power supply will do as long as it can deliver at least 2A (24W)
-* 2x LM2596 based converter (1x USB output, 1x Wire terminal output)
+* 5V 5A Switching Power Supply
 * PCA9685 16 Channel 12 Bit PMW Servo Driver [Wiki](http://wiki.sunfounder.cc/index.php?title=PCA9685_16_Channel_12_Bit_PWM_Servo_Driver). There are many clones available.
 * Servo Extension Cables
 * female-female Dupont jumper wire cable
 * Other wiring as needed
 * (TODO) Enclosure for all boards and connectors
-* Logic level shifter board
+* Breakout/Connection board
 
 Tools:
 * Multimeter
@@ -163,6 +163,9 @@ Links:
 **[TO DO]**
 
 ## Reading the feedback from servo motors with Raspberry Pi
+**[TO DO]**
+
+## Using output enable to manually bring robots to position and learn those positions.
 **[TO DO]**
 
 ## Arduino Code
