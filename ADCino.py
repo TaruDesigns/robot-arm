@@ -15,7 +15,7 @@ class ADCino:
         Returns:
             dict: _description_
         """
-        block_status = self.__bus.read_i2c_block_data(self.addr, 0, 14)
+        block_status = self.__bus.read_i2c_block_data(self.addr, 0, 14) # It reads 14 bytes: Leading + (6*2 bytes) of data + Trailing
         del block_status[0]
         del block_status[-1]# Delete leading and trailing bytes, they should be = 200
         for i in range(0, self.__number_of_ints):
@@ -43,7 +43,8 @@ class ADCino:
         """
         self._getdValues_()
         return self.chValues
-    def get_channel_data(self, channel, refresh=False) -> int:
+
+    def get_channel_data(self, channel, refresh=False) -> int: #TODO only request one channel instead of all data
         """Return only the value for that channel. Set bool to true to refresh buffer
         Args:
             channel (str): Channel name (CH0, CH1...)

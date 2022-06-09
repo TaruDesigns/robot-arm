@@ -2,6 +2,7 @@
 # LIBRARIES
 
 # External libraries
+from this import d
 import time
 # Import the PCA9685 module.
 from adafruit_pca9685 import PCA9685 as Adafruit_PCA9685
@@ -20,12 +21,6 @@ import pandas
 
 class Servo:
 
-    # PARAMETERS
-    SERVO_MOTOR_DUTY_CYCLE_MIN = 2.5  # Min duty cycle, in %
-    SERVO_MOTOR_DUTY_CYCLE_MAX = 12.5  # Max duty cycle, in %
-    SERVO_MOTOR_ANGLE_MIN = 0  # Min angle, in degrees
-    SERVO_MOTOR_ANGLE_MAX = 270  # Max angle, in degrees
-    
     # Angle to cover at each step of the calibration
     # We define it so we can have clear ads values between each step,
     # as the ads readings fluctuate, and too close angles will not be
@@ -74,17 +69,19 @@ class Servo:
         if not isinstance(ads_board_channel, int) and ads_board_channel >= 0:
             raise ValueError('The ads_board_channel parameter must be a positive integer >= 0.')
         
-        self.PWM_BOARD = pwm_board
-        self.PWM_BOARD_SERVO_CHANNEL = pwm_board_servo_channel
-        self.PWM_BOARD_RESOLUTION = pwm_board_resolution
+        self.__PWM_BOARD = pwm_board
+        self.__PWM_BOARD_SERVO_CHANNEL = pwm_board_servo_channel
+        self.__PWM_BOARD_RESOLUTION = pwm_board_resolution
         self.ADS_BOARD = ads_board
         self.ADS_BOARD_CHANNEL = ads_board_channel
+        self.ANGLEMIN = angle_min
+        self.ANGLEMAX = angle_max
         
+        self.__AnalogValue = 0
+
         # If the Servo motor doesn't have a valid angle_ads_value_map
         # we do not allow it to move
         self.BLOCKED = True
-
-        self.__ads_chan = AnalogIn(self.ADS_BOARD, self.ADS_BOARD_CHANNEL)
 
         if isinstance(angle_ads_value_map, pandas.DataFrame) \
             and angle_ads_value_map.columns.values.tolist() == ['angle','ads_value']:
@@ -94,6 +91,19 @@ class Servo:
             # Try to evaluate the current position of the servo
             self.current_angle = self.__evaluate_current_angle()
     
+    def __getAnalogValue(self):
+        """
+        Function to get the analog value of the servo.
+
+        Returns
+        -------
+            int
+            The analog value of the servo.
+
+        """
+        self.__AnalogValue = self.ADS_BOARD.get_channel_data(self.ADS_BOARD_CHANNEL)
+        return self.__AnalogValue
+
     def __evaluate_current_angle(self):
         """
         Function to evaluate the current angle based on the ads value.
@@ -109,7 +119,7 @@ class Servo:
 
         """
 
-        current_ads_value = self.__ads_chan.value
+        current_ads_value = self.__getAnalogValue()
         closest_angle = self.ANGLE_ADS_VALUE_MAP.ix[(self.ANGLE_ADS_VALUE_MAP.ads_value-current_ads_value).abs().argsort()[:1]].angle.values[0]
         
         return closest_angle
@@ -133,11 +143,11 @@ class Servo:
         angle = int(angle) - int(angle)%self.SERVO_MOTOR_ANGLE_CALIBRATION_STEP
          
         # Check that the angle is within the limits
-        if (angle < self.SERVO_MOTOR_ANGLE_MIN) | (angle > self.SERVO_MOTOR_ANGLE_MAX):
+        if (angle < self.ANGLEMIN) | (angle > self.ANGLEMAX):
             raise ValueError('The given angle ({}) is outside the limits!'.format(angle))
 
         # We make sure angle is treated as a float
-        servo_duty_cycle = float(angle)/(self.SERVO_MOTOR_ANGLE_MAX-self.SERVO_MOTOR_ANGLE_MIN)*(self.SERVO_MOTOR_DUTY_CYCLE_MAX-self.SERVO_MOTOR_DUTY_CYCLE_MIN) + self.SERVO_MOTOR_DUTY_CYCLE_MIN
+        servo_duty_cycle = float(angle)/(self.ANGLEMAX-self.ANGLEMIN)*(self.SERVO_MOTOR_DUTY_CYCLE_MAX-self.SERVO_MOTOR_DUTY_CYCLE_MIN) + self.SERVO_MOTOR_DUTY_CYCLE_MIN
 
         # Check that the duty cycle is within the limits
         # This check is just to be sure that also the angle parameters are set correctly
@@ -145,7 +155,7 @@ class Servo:
             raise ValueError('The given servo duty cycle ({}) is outside the limits!'.format(servo_duty_cycle))
 
         # The step must be an integer, as the board does not accept floats
-        pwm_step = int(self.PWM_BOARD_RESOLUTION*servo_duty_cycle/100)
+        pwm_step = int(self.__PWM_BOARD_RESOLUTION*servo_duty_cycle/100)
 
         # print('angle: {}\tservo_duty_cycle: {}\tpwm_step: {}'.format(angle,servo_duty_cycle,pwm_step))
 
@@ -161,20 +171,20 @@ class Servo:
         '''
 
         if raise_if_out_of_range:
-            if angle < self.SERVO_MOTOR_ANGLE_MIN: raise ValueError('The given angle ({}) is outside the limits!'.format(angle))
-            if angle > self.SERVO_MOTOR_ANGLE_MAX: raise ValueError('The given angle ({}) is outside the limits!'.format(angle))
+            if angle < self.ANGLEMIN: raise ValueError('The given angle ({}) is outside the limits!'.format(angle))
+            if angle > self.ANGLEMAX: raise ValueError('The given angle ({}) is outside the limits!'.format(angle))
         else:
             # If the specified angle is out of range, we block it to the closest limit
-            if angle < self.SERVO_MOTOR_ANGLE_MIN: angle = self.SERVO_MOTOR_ANGLE_MIN
-            if angle > self.SERVO_MOTOR_ANGLE_MAX: angle = self.SERVO_MOTOR_ANGLE_MAX
+            if angle < self.ANGLEMIN: angle = self.ANGLEMIN
+            if angle > self.ANGLEMAX: angle = self.ANGLEMAX
         
         pwm_step = self.__convert_angle_to_pwm_board_step(angle)
-        self.PWM_BOARD.set_pwm(self.PWM_BOARD_SERVO_CHANNEL, 0, pwm_step)
+        self.__PWM_BOARD.set_pwm(self.__PWM_BOARD_SERVO_CHANNEL, 0, pwm_step) #TODO do I need this or can I just send the angle?
 
     def calibrate(self, calibration_map_path):
         
         print('CALIBRATION OF THE SERVO MOTOR')
-        print('This function will move the servo motor from {} (SERVO_MOTOR_ANGLE_MIN) to {} (SERVO_MOTOR_ANGLE_MAX),'.format(self.SERVO_MOTOR_ANGLE_MIN,self.SERVO_MOTOR_ANGLE_MAX))
+        print('This function will move the servo motor from {} (ANGLEMIN) to {} (ANGLEMAX),'.format(self.ANGLEMIN,self.ANGLEMAX))
         print('and register the output value of the ADS board.')
         print()
         print('MAKE SURE THE SERVO IS FREE TO MOVE!')
@@ -188,7 +198,7 @@ class Servo:
         calibration_map_angle_to_ads_value = []
 
         # Move to the minimum angle, in case the servo is at another angle
-        self.__move(self.SERVO_MOTOR_ANGLE_MIN)
+        self.__move(self.ANGLEMIN)
 
         # Initialize the exponential moving average        
         ema = self.__ads_chan.value
@@ -220,7 +230,7 @@ class Servo:
         print('Moved to 0.')
         time.sleep(2)
         
-        for angle in range(self.SERVO_MOTOR_ANGLE_MIN,self.SERVO_MOTOR_ANGLE_MAX+1, self.SERVO_MOTOR_ANGLE_CALIBRATION_STEP):
+        for angle in range(self.ANGLEMIN,self.ANGLEMAX+1, self.SERVO_MOTOR_ANGLE_CALIBRATION_STEP):
             
             self.__move(angle)
 

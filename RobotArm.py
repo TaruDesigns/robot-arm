@@ -13,6 +13,9 @@ import digitalio
 import ADCino
 import pandas
 import RobotServo as Servo
+# Settings TODO: use json?
+from .Settings import *
+
 
 # Uncomment to enable debug output.
 #import logging
@@ -27,13 +30,10 @@ import RobotServo as Servo
 class RobotArm:
 
     # PARAMETERS
-    PWM_BOARD_RESOLUTION = 4096 # PWM control board resolution
-    SERVO_MOTOR_FREQUENCY = 50 #In Hz
-    
-    JOINT_0_ANGLE_ADS_VALUE_MAP_PATH = 'data/angle_ads_value_map_joint_0.csv'
+
 
     def __init__(self):
-        
+        #TODO use Logging library
         print('Initialize PWM board controller')
         # Initialise the PCA9685 using the default address (0x40).
         self.__pwm = Adafruit_PCA9685.PCA9685()
@@ -44,58 +44,32 @@ class RobotArm:
 
         self.__i2c = busio.I2C(board.SCL, board.SDA)
         self.__adc = ADCino.ADCino()
-        
-        self.__joints = []
-        self.__joints.append(Servo(self.__pwm,0,self.PWM_BOARD_RESOLUTION,0,270,self.__adc,0, pandas.read_csv(self.JOINT_0_ANGLE_ADS_VALUE_MAP_PATH)))
-        # self.__joints.append(Servo(self.__pwm,1,self.PWM_BOARD_RESOLUTION,0,270,self.__adc,1))
-        # self.__joints.append(Servo(self.__pwm,2,self.PWM_BOARD_RESOLUTION,0,270,self.__adc,2))
-        # self.__joints.append(Servo(self.__pwm,3,self.PWM_BOARD_RESOLUTION,0,270,self.__adc,3))
-        # self.__joints.append(Servo(self.__pwm,4,self.PWM_BOARD_RESOLUTION,0,270,self.__ads2,0))
-        # self.__joints.append(Servo(self.__pwm,5,self.PWM_BOARD_RESOLUTION,0,270,self.__ads2,1))
 
-    def move(self):
+        self.__joints = [] # TODO List comprehension
+        for i in range(0, 5):
+            print('Initialize joint ' + str(i))
+            self.__joints.append(Servo(self.__pwm, \
+                                    JOINT_PWM_CHANNELS[i], \
+                                    PWM_BOARD_RESOLUTION, \
+                                    JOINT_MIN_ANGLE[i], \
+                                    JOINT_MAX_ANGLE[i], \
+                                    self.__adc, \
+                                    JOINT_ADC_INPUT[i], \
+                                    pandas.read_csv(self.JOINT_0_ANGLE_ADS_VALUE_MAP_PATH)))
+        print('Initialization done')
+        
+    def move_joint(self, joint:int, angle:int):  
         
         print('Move the servo')
-        self.__joints[0].move(0)
-        # self.__joints[1].move(0)
-        time.sleep(3)
-        
-        self.__joints[0].move(180)
-        # self.__joints[1].move(90)
-        time.sleep(3)
-        
-        self.__joints[0].move(90)
-        # self.__joints[1].move(270)
-        time.sleep(3)
-        
-        self.__joints[0].move(120)
-        # self.__joints[1].move(200)
-        time.sleep(3)
+        self.__joints[joint].move(angle)
 
-def calibrate_servos():
-    
-    PWM_BOARD_RESOLUTION = 4096 # PWM control board resolution
-    SERVO_MOTOR_FREQUENCY = 50 #In Hz
-    JOINT_0_ANGLE_ADS_VALUE_MAP_PATH = 'data/angle_ads_value_map_joint_0.csv'
-
-    print('Initialize PWM board controller')
-    # Initialise the PCA9685 using the default address (0x40).
-    pwm = Adafruit_PCA9685.PCA9685()
-
-    print('Set frequency')
-    # Set the frequency
-    pwm.set_pwm_freq(SERVO_MOTOR_FREQUENCY)
-
-    i2c = busio.I2C(board.SCL, board.SDA)
-    adc = ADCino.ADCino
-
-    servo0 = Servo(pwm,0,PWM_BOARD_RESOLUTION,0,270,adc,0, None)
-
-    servo0.calibrate(JOINT_0_ANGLE_ADS_VALUE_MAP_PATH)
+    def calibrate_servo(self, joint:int):
+        print('Calibrate the servo: ' + str(joint))')
+        self.__joints[joint].calibrate(JOINT_0_ANGLE_ADS_VALUE_MAP_PATH)
 
 if __name__ == "__main__":
     
     # robot_arm = RobotArm()
     # robot_arm.move()
 
-    calibrate_servos()
+    Robot = RobotArm
