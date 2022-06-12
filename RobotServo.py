@@ -2,10 +2,10 @@
 # LIBRARIES
 
 # External libraries
-from this import d
 import time
 # Import the PCA9685 module.
-from adafruit_pca9685 import PCA9685 as Adafruit_PCA9685
+from adafruit_motor import servo
+from adafruit_pca9685 import PCA9685
 import ADCino
 import pandas
 
@@ -52,9 +52,10 @@ class Servo:
         , angle_max
         , ads_board
         , ads_board_channel
-        , angle_ads_value_map):
+        , angle_calibration_map):
         
-        if not isinstance(pwm_board, Adafruit_PCA9685.PCA9685):
+        # Sanity checks on the inputs
+        if not isinstance(pwm_board, PCA9685):
             raise ValueError('The pwm_board parameter must be a Adafruit_PCA9685.PCA9685 instance.')
         
         if not isinstance(pwm_board_servo_channel, int) and pwm_board_servo_channel >= 0:
@@ -77,16 +78,16 @@ class Servo:
         self.ANGLEMIN = angle_min
         self.ANGLEMAX = angle_max
         
-        self.__AnalogValue = 0
+        self.AnalogValue = 0
 
-        # If the Servo motor doesn't have a valid angle_ads_value_map
+        # If the Servo motor doesn't have a valid angle_calibration_map
         # we do not allow it to move
         self.BLOCKED = True
 
-        if isinstance(angle_ads_value_map, pandas.DataFrame) \
-            and angle_ads_value_map.columns.values.tolist() == ['angle','ads_value']:
+        if isinstance(angle_calibration_map, pandas.DataFrame) \
+            and angle_calibration_map.columns.values.tolist() == ['angle','ads_value', 'pulse_width']:
             self.BLOCKED = False
-            self.ANGLE_ADS_VALUE_MAP = angle_ads_value_map
+            self.angle_calibration_map = angle_calibration_map
 
             # Try to evaluate the current position of the servo
             self.current_angle = self.__evaluate_current_angle()
@@ -94,6 +95,7 @@ class Servo:
     def __getAnalogValue(self):
         """
         Function to get the analog value of the servo.
+        This is the analog value as returned by the ADC (0-1023) and will be mapped on another method
 
         Returns
         -------
@@ -101,8 +103,9 @@ class Servo:
             The analog value of the servo.
 
         """
-        self.__AnalogValue = self.ADS_BOARD.get_channel_data(self.ADS_BOARD_CHANNEL)
-        return self.__AnalogValue
+        #TODO run an asyncio routine to constantly update the analog value in memory
+        self.AnalogValue = self.ADS_BOARD.get_channel_data(self.ADS_BOARD_CHANNEL)
+        return self.AnalogValue
 
     def __evaluate_current_angle(self):
         """
@@ -110,7 +113,7 @@ class Servo:
 
         To evaluate the current angle of the servo we:
         * read the current ads value
-        * use the angle_ads_value_map to estimate the angle
+        * use the angle_calibration_map to estimate the angle
 
         Returns
 		-------
@@ -120,7 +123,12 @@ class Servo:
         """
 
         current_ads_value = self.__getAnalogValue()
-        closest_angle = self.ANGLE_ADS_VALUE_MAP.ix[(self.ANGLE_ADS_VALUE_MAP.ads_value-current_ads_value).abs().argsort()[:1]].angle.values[0]
+        closest_angle = self.angle_calibration_map.ix[(self.angle_calibration_map.ads_value-current_ads_value) \
+                                                        .abs() \
+                                                        .argsort()[:1]] \
+                                                        .angle \
+                                                        .values[0] # I think this is a convoluted way to get the closest angle to the current ads value.
+                                                        # I feel like this might fail a lot of times if you don't pre-calibrate basically every angle, TODO check this
         
         return closest_angle
         
@@ -177,10 +185,13 @@ class Servo:
             # If the specified angle is out of range, we block it to the closest limit
             if angle < self.ANGLEMIN: angle = self.ANGLEMIN
             if angle > self.ANGLEMAX: angle = self.ANGLEMAX
+            #TODO Log a Warning here
         
         pwm_step = self.__convert_angle_to_pwm_board_step(angle)
         self.__PWM_BOARD.set_pwm(self.__PWM_BOARD_SERVO_CHANNEL, 0, pwm_step) #TODO do I need this or can I just send the angle?
-
+        #TODO use servo library instead: When recalibrating, change the pulse width range
+        #servo7 = servo.Servo()
+        #servo7.set_pulse_width_range()
     def calibrate(self, calibration_map_path):
         
         print('CALIBRATION OF THE SERVO MOTOR')
@@ -194,79 +205,49 @@ class Servo:
             return
 
         print('Starting calibration.')
-
-        calibration_map_angle_to_ads_value = []
-
-        # Move to the minimum angle, in case the servo is at another angle
-        self.__move(self.ANGLEMIN)
-
-        # Initialize the exponential moving average        
-        ema = self.__ads_chan.value
-        
-        TIME_STEP_DURATION = 0.2
+        TIME_STEP_DURATION = 0.2 #Values to be used by the ema filter
         NUM_OF_TIME_STEPS = 10
+        calibration_map_angle_to_ads_value = []
+        # Move to the minimum angle, in case the servo is at another angle
+        self.__move(self.ANGLEMIN) #TODO check if I have to use this or the other move function
+        self.moving_avg_filter(TIME_STEP_DURATION, NUM_OF_TIME_STEPS)
+        print('Moved to 0.')
+        time.sleep(1)
+        #After moving it to 0 we calibrate a number of intermediate steps between start and and end
+        for angle in range(self.ANGLEMIN,self.ANGLEMAX+1, self.SERVO_MOTOR_ANGLE_CALIBRATION_STEP):
+            self.__move(angle)
+            self.moving_avg_filter(NUM_OF_TIME_STEPS, TIME_STEP_DURATION)
+            self.current_angle = angle
+            # Read voltage and use it to evaluate if the servo is stuck
+            calibration_map_angle_to_ads_value.append([angle,self.AnalogValue])
+            print('Moved to angle {}, ads value is {}'.format(angle,self.AnalogValue))
 
-        # We let the ems to be estimated over some cycles
-        # before checking if it converged
+        calibration_map_angle_to_ads_value_df = pandas.DataFrame(calibration_map_angle_to_ads_value, columns = ['angle','ads_value'])
+        calibration_map_angle_to_ads_value_df.to_csv(calibration_map_path, index=False)
+
+    def moving_avg_filter(self, NUM_OF_TIME_STEPS, TIME_STEP_DURATION):
+        # Initialize the exponential moving average        
+        ema = self.AnalogValue
         for counter in range(NUM_OF_TIME_STEPS):
             old_ema = ema
-            ema = self.CALIBRATION_EMA_ALPHA*self.__ads_chan.value + (1-self.CALIBRATION_EMA_ALPHA)*ema
+            ema = self.CALIBRATION_EMA_ALPHA*self.AnalogValue + (1-self.CALIBRATION_EMA_ALPHA)*ema
             
-            print('value: {:.2f}\t\tema: {:.2f}\t\tdiff percentage: {:.4f}'.format(self.__ads_chan.value,ema,abs((ema-old_ema)/ema)))
+            print('value: {:.2f}\t\tema: {:.2f}\t\tdiff percentage: {:.4f}'.format(self.AnalogValue,ema,abs((ema-old_ema)/ema)))
             
-            time.sleep(TIME_STEP_DURATION)
+            time.sleep(TIME_STEP_DURATION) #TODO: Check if this Sleep will cause problems later
         
         while True:
             old_ema = ema
-            ema = self.CALIBRATION_EMA_ALPHA*self.__ads_chan.value + (1-self.CALIBRATION_EMA_ALPHA)*ema
+            ema = self.CALIBRATION_EMA_ALPHA*self.AnalogValue + (1-self.CALIBRATION_EMA_ALPHA)*ema
             
-            print('value: {:.2f}\t\tema: {:.2f}\t\tdiff percentage: {:.4f}'.format(self.__ads_chan.value,ema,abs((ema-old_ema)/ema)))
+            print('value: {:.2f}\t\tema: {:.2f}\t\tdiff percentage: {:.4f}'.format(self.AnalogValue,ema,abs((ema-old_ema)/ema)))
             
             if abs((ema-old_ema)/ema) <= self.CALIBRATION_EMA_CONVERGENCE_PERCENTAGE: break
             
             time.sleep(TIME_STEP_DURATION)
-            
-        
-        print('Moved to 0.')
-        time.sleep(2)
-        
-        for angle in range(self.ANGLEMIN,self.ANGLEMAX+1, self.SERVO_MOTOR_ANGLE_CALIBRATION_STEP):
-            
-            self.__move(angle)
 
-            # Initialize the exponential moving average
-            ema = self.__ads_chan.value
-
-            # We let the ems to be estimated over some cycles
-            # before checking if it converged
-            for counter in range(NUM_OF_TIME_STEPS):
-                old_ema = ema
-                ema = self.CALIBRATION_EMA_ALPHA*self.__ads_chan.value + (1-self.CALIBRATION_EMA_ALPHA)*ema
-                
-                print('value: {:.2f}\t\tema: {:.2f}\t\tdiff percentage: {:.4f}'.format(self.__ads_chan.value,ema,abs((ema-old_ema)/ema)))
-                
-                time.sleep(TIME_STEP_DURATION)
-            
-            while True:
-                old_ema = ema
-                ema = self.CALIBRATION_EMA_ALPHA*self.__ads_chan.value + (1-self.CALIBRATION_EMA_ALPHA)*ema
-                
-                print('value: {:.2f}\t\tema: {:.2f}\t\tdiff percentage: {:.4f}'.format(self.__ads_chan.value,ema,abs((ema-old_ema)/ema)))
-                
-                if abs((ema-old_ema)/ema) <= self.CALIBRATION_EMA_CONVERGENCE_PERCENTAGE: break
-                
-                time.sleep(TIME_STEP_DURATION)
-            
-            
-            self.current_angle = angle
-
-            # Read voltage and use it to evaluate if the servo is stuck
-            calibration_map_angle_to_ads_value.append([angle,self.__ads_chan.value])
-
-            print('Moved to angle {}, ads value is {}'.format(angle,self.__ads_chan.value))
-        
-        calibration_map_angle_to_ads_value_df = pandas.DataFrame(calibration_map_angle_to_ads_value, columns = ['angle','ads_value'])
-        calibration_map_angle_to_ads_value_df.to_csv(calibration_map_path, index=False)
+        # We let the ems to be estimated over some cycles
+        # before checking if it converged
 
     def move(self, angle):
         '''
