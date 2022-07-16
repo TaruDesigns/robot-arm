@@ -8,13 +8,12 @@ import time
 # Standard GPIO for the Raspberry
 import board
 import busio
-from adafruit_motor import servo
-from adafruit_pca9685 import PCA9685
+#from adafruit_motor import servo
+import Adafruit_PCA9685
 import digitalio
 # import arduino ADC
 import ADCino
-import pandas
-import RobotServo
+from RobotServo import RobotServo
 # Settings TODO: use json?
 import Settings as stn
 
@@ -40,11 +39,11 @@ class RobotArm:
         #Initialise the I2C bus
         self.__i2c = busio.I2C(board.SCL, board.SDA)
         # Initialise the PCA9685 using the default address (0x40).
-        self.__pwm = PCA9685(self.__i2c)
+        self.__pwm = Adafruit_PCA9685.PCA9685()
         print('Set frequency')
         # Set the frequency
-        self.__pwm.frequency(stn.SERVO_MOTOR_FREQUENCY)
-
+        self.__pwm.set_pwm_freq(stn.SERVO_MOTOR_FREQUENCY)
+        
         #Initialize the ADC
         self.__adc = ADCino.ADCino()
 
@@ -58,17 +57,22 @@ class RobotArm:
                                     stn.JOINT_MAX_ANGLE[i], \
                                     self.__adc, \
                                     stn.JOINT_ADC_INPUT[i], \
-                                    pandas.read_csv(stn.JOINT_VALUE_MAP_PATH[i])))
+                                    stn.JOINT_VALUE_MAP_PATH[i]))
         print('Initialization done')
-        
+
     def move_joint(self, joint:int, angle:int):  
-        
         print('Move the servo')
         self.__joints[joint].move(angle)
 
     def calibrate_servo(self, joint:int):
-        print('Calibrate the servo: ' + str(joint))')
-        self.__joints[joint].calibrate(stn.JOINT_VALUE_MAP_PATH[i])
+        print('Calibrate the servo: ' + str(joint))
+        self.__joints[joint].calibrate()
+    def show_position(self):
+        for joint in self.__joints:
+            angle = joint.__evaluate_current_angle()
+            print (angle)
+
+
 
 if __name__ == "__main__":
     
@@ -76,7 +80,16 @@ if __name__ == "__main__":
     Robot = RobotArm()
     print("Check each joint: \n")
     while True:
-        angle = input("Enter angle: ")
-        joint = input("Enter joint: ")
-        Robot.move_joint(joint, angle)
+        command = input("Enter command (move, calibrate, position)\n")
+        if command == "move":
+            angle = int(input("Enter angle: "))
+            joint = int(input("Enter joint: "))
+            Robot.move_joint(joint, angle)
+        elif command == "calibrate":
+            joint = int(input("Enter joint: "))
+            Robot.calibrate_servo(joint)
+        elif command == "position":
+            Robot.show_position()
+        else:
+            print("Command not recognised")
         time.sleep(1)

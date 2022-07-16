@@ -33,8 +33,21 @@ JOINT_ADC_INPUT[3] = 3
 JOINT_ADC_INPUT[4] = 4
 JOINT_ADC_INPUT[5] = 5
 
+JOINT_NAME = ["TestName" for x in range(0,NUMBER_OF_JOINTS+1)]
+JOINT_NAME[0] = "Joint1"
+JOINT_NAME[1] = "Joint2"
+JOINT_NAME[2] = "Joint3"
+JOINT_NAME[3] = "Joint4"
+JOINT_NAME[4] = "Joint5"
+JOINT_NAME[5] = "Joint6"
+
 JOINT_VALUE_MAP_PATH = ['' for x in range (0,NUMBER_OF_JOINTS+1)]
 JOINT_VALUE_MAP_PATH[0] = 'data/angle_ads_value_map_joint_0.csv'
+JOINT_VALUE_MAP_PATH[1] = 'data/angle_ads_value_map_joint_1.csv'
+JOINT_VALUE_MAP_PATH[2] = 'data/angle_ads_value_map_joint_2.csv'
+JOINT_VALUE_MAP_PATH[3] = 'data/angle_ads_value_map_joint_3.csv'
+JOINT_VALUE_MAP_PATH[4] = 'data/angle_ads_value_map_joint_4.csv'
+JOINT_VALUE_MAP_PATH[5] = 'data/angle_ads_value_map_joint_5.csv'
 
 #MISC SETTINGS
 PWM_BOARD_RESOLUTION = 4096 # PWM control board resolution

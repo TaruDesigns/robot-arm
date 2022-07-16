@@ -15,14 +15,15 @@ class ADCino:
         Returns:
             dict: _description_
         """
-        block_status = self.__bus.read_i2c_block_data(self.addr, 0, 14) # It reads 14 bytes: Leading + (6*2 bytes) of data + Trailing
+        block_status = self.__bus.read_i2c_block_data(self.__addr, 0, 14) # It reads 14 bytes: Leading + (6*2 bytes) of data + Trailing
         del block_status[0]
         del block_status[-1]# Delete leading and trailing bytes, they should be = 200
         for i in range(0, self.__number_of_ints):
             chName = "CH" + str(i)
+            #print("ValHigh: " + str(block_status[i*2]) + " ValLow " + str(block_status[i*2 + 1]))
             self.chValues[chName] = self._buildInt(block_status[i*2], block_status[i*2 + 1])
             # CH0, CH1, CH2, CH3, CH4, CH5
-    def _buildInt(higherByte, lowerByte) -> int:
+    def _buildInt(self, higherByte, lowerByte) -> int:
         """Build integer from two bytes
 
         Args:
@@ -52,7 +53,9 @@ class ADCino:
         Returns:
             int: Value of channel
         """
+        print(str(channel))
         if refresh:
             self._getdValues_()
-        return self.chValues[channel]
+        chName = "CH" + str(channel)
+        return self.chValues[chName]
  

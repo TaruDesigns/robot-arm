@@ -43,12 +43,10 @@ void requestEvent() {
 
 void sendADCdata(uint16_t *data) {
   // function to send ADC data
-  digitalWrite(LED_PIN, HIGH); // Turn the LED ON
   Wire.write(LEADING_TRAILING_BYTE_VALUE);
   for (int i = 0; i < ARRAY_SIZE; i++) {
     Wire.write(highByte(data[i]));
     Wire.write(lowByte(data[i]));
   }
   Wire.write(LEADING_TRAILING_BYTE_VALUE);
-  digitalWrite(LED_PIN, LOW); // Turn the LED OFF
 }

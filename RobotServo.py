@@ -4,10 +4,11 @@
 # External libraries
 import time
 # Import the PCA9685 module.
-from adafruit_motor import servo
-from adafruit_pca9685 import PCA9685
+#from adafruit_motor import servo
+from Adafruit_PCA9685 import PCA9685
 import ADCino
 import pandas
+import Settings as stn
 
 # Uncomment to enable debug output.
 #import logging
@@ -19,7 +20,7 @@ import pandas
 # ----------------------------
 # CODE
 
-class Servo:
+class RobotServo:
 
     # Angle to cover at each step of the calibration
     # We define it so we can have clear ads values between each step,
@@ -52,11 +53,11 @@ class Servo:
         , angle_max
         , ads_board
         , ads_board_channel
-        , angle_calibration_map):
+        , calibration_map_path):
         
         # Sanity checks on the inputs
-        if not isinstance(pwm_board, PCA9685):
-            raise ValueError('The pwm_board parameter must be a Adafruit_PCA9685.PCA9685 instance.')
+        #~if not isinstance(pwm_board, Adafruit_PCA9685.PCA9685()):
+        #    raise ValueError('The pwm_board parameter must be a Adafruit_PCA9685.PCA9685 instance.')
         
         if not isinstance(pwm_board_servo_channel, int) and pwm_board_servo_channel >= 0:
             raise ValueError('The pwm_board_servo_channel parameter must be a positive integer >= 0.')
@@ -77,12 +78,15 @@ class Servo:
         self.ADS_BOARD_CHANNEL = ads_board_channel
         self.ANGLEMIN = angle_min
         self.ANGLEMAX = angle_max
-        
-        self.AnalogValue = 0
+        self.calibration_map_path = calibration_map_path
+        self.angle_calibration_map = pandas.read_csv(calibration_map_path)
 
+        self.AnalogValue = 0
+        self.current_angle = 0
+        self.BLOCKED = False
         # If the Servo motor doesn't have a valid angle_calibration_map
         # we do not allow it to move
-        self.BLOCKED = True
+        """self.BLOCKED = True
 
         if isinstance(angle_calibration_map, pandas.DataFrame) \
             and angle_calibration_map.columns.values.tolist() == ['angle','ads_value', 'pulse_width']:
@@ -91,7 +95,7 @@ class Servo:
 
             # Try to evaluate the current position of the servo
             self.current_angle = self.__evaluate_current_angle()
-    
+ """   
     def __getAnalogValue(self):
         """
         Function to get the analog value of the servo.
@@ -104,7 +108,7 @@ class Servo:
 
         """
         #TODO run an asyncio routine to constantly update the analog value in memory
-        self.AnalogValue = self.ADS_BOARD.get_channel_data(self.ADS_BOARD_CHANNEL)
+        self.AnalogValue = self.ADS_BOARD.get_channel_data(self.ADS_BOARD_CHANNEL, True)
         return self.AnalogValue
 
     def __evaluate_current_angle(self):
@@ -155,17 +159,17 @@ class Servo:
             raise ValueError('The given angle ({}) is outside the limits!'.format(angle))
 
         # We make sure angle is treated as a float
-        servo_duty_cycle = float(angle)/(self.ANGLEMAX-self.ANGLEMIN)*(self.SERVO_MOTOR_DUTY_CYCLE_MAX-self.SERVO_MOTOR_DUTY_CYCLE_MIN) + self.SERVO_MOTOR_DUTY_CYCLE_MIN
-
+        servo_duty_cycle = float(angle)/(self.ANGLEMAX-self.ANGLEMIN)*(stn.SERVO_MOTOR_DUTY_CYCLE_MAX-stn.SERVO_MOTOR_DUTY_CYCLE_MIN) + stn.SERVO_MOTOR_DUTY_CYCLE_MIN
+        #TODO Send these duty cycle min properly
         # Check that the duty cycle is within the limits
         # This check is just to be sure that also the angle parameters are set correctly
-        if (servo_duty_cycle < self.SERVO_MOTOR_DUTY_CYCLE_MIN) | (servo_duty_cycle > self.SERVO_MOTOR_DUTY_CYCLE_MAX):
+        if (servo_duty_cycle < stn.SERVO_MOTOR_DUTY_CYCLE_MIN) | (servo_duty_cycle > stn.SERVO_MOTOR_DUTY_CYCLE_MAX):
             raise ValueError('The given servo duty cycle ({}) is outside the limits!'.format(servo_duty_cycle))
 
         # The step must be an integer, as the board does not accept floats
         pwm_step = int(self.__PWM_BOARD_RESOLUTION*servo_duty_cycle/100)
 
-        # print('angle: {}\tservo_duty_cycle: {}\tpwm_step: {}'.format(angle,servo_duty_cycle,pwm_step))
+        print('angle: {}\tservo_duty_cycle: {}\tpwm_step: {}'.format(angle,servo_duty_cycle,pwm_step))
 
         return pwm_step
 
@@ -188,11 +192,9 @@ class Servo:
             #TODO Log a Warning here
         
         pwm_step = self.__convert_angle_to_pwm_board_step(angle)
-        self.__PWM_BOARD.set_pwm(self.__PWM_BOARD_SERVO_CHANNEL, 0, pwm_step) #TODO do I need this or can I just send the angle?
+        self.__PWM_BOARD.set_pwm(self.__PWM_BOARD_SERVO_CHANNEL, 0, pwm_step)
         #TODO use servo library instead: When recalibrating, change the pulse width range
-        #servo7 = servo.Servo()
-        #servo7.set_pulse_width_range()
-    def calibrate(self, calibration_map_path):
+    def calibrate(self):
         
         print('CALIBRATION OF THE SERVO MOTOR')
         print('This function will move the servo motor from {} (ANGLEMIN) to {} (ANGLEMAX),'.format(self.ANGLEMIN,self.ANGLEMAX))
@@ -223,20 +225,26 @@ class Servo:
             print('Moved to angle {}, ads value is {}'.format(angle,self.AnalogValue))
 
         calibration_map_angle_to_ads_value_df = pandas.DataFrame(calibration_map_angle_to_ads_value, columns = ['angle','ads_value'])
-        calibration_map_angle_to_ads_value_df.to_csv(calibration_map_path, index=False)
+        calibration_map_angle_to_ads_value_df.to_csv(self.calibration_map_path, index=False)
 
     def moving_avg_filter(self, NUM_OF_TIME_STEPS, TIME_STEP_DURATION):
-        # Initialize the exponential moving average        
-        ema = self.AnalogValue
-        for counter in range(NUM_OF_TIME_STEPS):
+        # Initialize the exponential moving average
+        self.__getAnalogValue() #TODO remove when async
+        ema = self.AnalogValue # To avoid divide by zero error
+        print("Start Ema: " + str(ema))
+        for counter in range(0, 10):
+            self.__getAnalogValue() #TODO remove when async
             old_ema = ema
             ema = self.CALIBRATION_EMA_ALPHA*self.AnalogValue + (1-self.CALIBRATION_EMA_ALPHA)*ema
             
-            print('value: {:.2f}\t\tema: {:.2f}\t\tdiff percentage: {:.4f}'.format(self.AnalogValue,ema,abs((ema-old_ema)/ema)))
-            
+            try:
+                print('value: {:.2f}\t\tema: {:.2f}\t\tdiff percentage: {:.4f}'.format(self.AnalogValue,ema,abs((ema-old_ema)/ema)))
+            except:
+                print("couldn't get intermediate value")
             time.sleep(TIME_STEP_DURATION) #TODO: Check if this Sleep will cause problems later
         
         while True:
+            self.__getAnalogValue() #TODO remove when async
             old_ema = ema
             ema = self.CALIBRATION_EMA_ALPHA*self.AnalogValue + (1-self.CALIBRATION_EMA_ALPHA)*ema
             
@@ -285,7 +293,7 @@ class Servo:
                 
                 evaluated_angle = self.__evaluate_current_angle()
 
-                if (time.time()-start_time) >= MAX_TIME_BEFORE_EMERGENCY_STOP:
+                if (time.time()-start_time) >= self.MAX_TIME_BEFORE_EMERGENCY_STOP:
                     
                     if (versus == 'UP' and self.current_angle <= evaluated_angle):
                         pass
